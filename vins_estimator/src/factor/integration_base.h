@@ -1,8 +1,8 @@
 /*******************************************************
  * Copyright (C) 2019, Aerial Robotics Group, Hong Kong University of Science and Technology
- * 
+ *
  * This file is part of VINS.
- * 
+ *
  * Licensed under the GNU General Public License v3.0;
  * you may not use this file except in compliance with the License.
  *******************************************************/
@@ -110,7 +110,7 @@ public:
                              Eigen::Vector3d &result_delta_p, Eigen::Quaterniond &result_delta_q, Eigen::Vector3d &result_delta_v,
                              Eigen::Vector3d &result_linearized_ba, Eigen::Vector3d &result_linearized_bg, bool update_jacobian)
     {
-        //ROS_INFO("midpoint integration");
+        // ROS_INFO("midpoint integration");
         Vector3d un_acc_0 = delta_q * (_acc_0 - linearized_ba);
         Vector3d un_gyr = 0.5 * (_gyr_0 + _gyr_1) - linearized_bg;
         result_delta_q = delta_q * Quaterniond(1, un_gyr(0) * _dt / 2, un_gyr(1) * _dt / 2, un_gyr(2) * _dt / 2);
@@ -154,7 +154,7 @@ public:
             F.block<3, 3>(6, 12) = -0.5 * result_delta_q.toRotationMatrix() * R_a_1_x * _dt * -_dt;
             F.block<3, 3>(9, 9) = Matrix3d::Identity();
             F.block<3, 3>(12, 12) = Matrix3d::Identity();
-            //cout<<"A"<<endl<<A<<endl;
+            // cout<<"A"<<endl<<A<<endl;
 
             MatrixXd V = MatrixXd::Zero(15, 18);
             V.block<3, 3>(0, 0) = 0.25 * delta_q.toRotationMatrix() * _dt * _dt;
@@ -170,8 +170,8 @@ public:
             V.block<3, 3>(9, 12) = MatrixXd::Identity(3, 3) * _dt;
             V.block<3, 3>(12, 15) = MatrixXd::Identity(3, 3) * _dt;
 
-            //step_jacobian = F;
-            //step_V = V;
+            // step_jacobian = F;
+            // step_V = V;
             jacobian = F * jacobian;
             covariance = F * covariance * F.transpose() + V * noise * V.transpose();
         }
@@ -298,8 +298,8 @@ public:
                             result_delta_p, result_delta_q, result_delta_v,
                             result_linearized_ba, result_linearized_bg, 1);
 
-        //checkJacobian(_dt, acc_0, gyr_0, acc_1, gyr_1, delta_p, delta_q, delta_v,
-        //                    linearized_ba, linearized_bg);
+        // checkJacobian(_dt, acc_0, gyr_0, acc_1, gyr_1, delta_p, delta_q, delta_v,
+        //                     linearized_ba, linearized_bg);
         delta_p = result_delta_p;
         delta_q = result_delta_q;
         delta_v = result_delta_v;
@@ -373,6 +373,46 @@ public:
         return residuals;
     }
 
+    Eigen::Matrix<double, 18, 1> evaluate(const Eigen::Vector3d &Pi, const Eigen::Quaterniond &Qi, const Eigen::Vector3d &Vi, const Eigen::Vector3d &Pi_io, const Eigen::Quaterniond &Qi_io,
+                                          const Eigen::Vector3d &Bai, const Eigen::Vector3d &Bgi,
+                                          const Eigen::Vector3d &Pj, const Eigen::Quaterniond &Qj, const Eigen::Vector3d &Vj, const Eigen::Vector3d &Pj_io, const Eigen::Quaterniond &Qj_io,
+                                          const Eigen::Vector3d &Baj, const Eigen::Vector3d &Bgj)
+    {
+        Eigen::Matrix<double, 18, 1> residuals;
+
+        Eigen::Matrix3d dp_dba = jacobian_enc.block<3, 3>(0, 12);
+        Eigen::Matrix3d dp_dbg = jacobian_enc.block<3, 3>(0, 15);
+
+        Eigen::Matrix3d dq_dbg = jacobian_enc.block<3, 3>(3, 15);
+
+        Eigen::Matrix3d dv_dba = jacobian_enc.block<3, 3>(6, 12);
+        Eigen::Matrix3d dv_dbg = jacobian_enc.block<3, 3>(6, 15);
+
+        Eigen::Matrix3d do_dbg = jacobian_enc.block<3, 3>(9, 15);
+
+        Eigen::Vector3d dba = Bai - linearized_ba;
+        Eigen::Vector3d dbg = Bgi - linearized_bg;
+
+        Eigen::Quaterniond corrected_delta_q = delta_q * Utility::deltaQ(dq_dbg * dbg);
+        Eigen::Vector3d corrected_delta_v = delta_v + dv_dba * dba + dv_dbg * dbg;
+        Eigen::Vector3d corrected_delta_p = delta_p + dp_dba * dba + dp_dbg * dbg;
+        Eigen::Vector3d corrected_delta_eta = delta_eta + do_dbg * dbg;
+        // ROS_INFO_STREAM("do_dbg " << do_dbg);
+        // ROS_INFO_STREAM("delta_eta " << delta_eta.transpose());
+        // ROS_INFO_STREAM("Corrected_delta_eta " << corrected_delta_eta.transpose());
+
+        residuals.block<3, 1>(0, 0) = Qi.inverse() * (0.5 * G * sum_dt * sum_dt + Pj - Pi - Vi * sum_dt) - corrected_delta_p;
+        residuals.block<3, 1>(3, 0) = 2 * (corrected_delta_q.inverse() * (Qi.inverse() * Qj)).vec();
+        residuals.block<3, 1>(6, 0) = Qi.inverse() * (G * sum_dt + Vj - Vi) - corrected_delta_v;
+
+        // residuals.block<3, 1>(9, 0) = Qi.inverse() * (Pj - Pi) - TIO + Qi.inverse() * Qj * TIO - corrected_delta_eta;
+        residuals.block<3, 1>(9, 0) = (Qi.inverse() * ((Pj + Qj * TIO) - (Pi + Qi * TIO)) - corrected_delta_eta);
+
+        residuals.block<3, 1>(12, 0) = Baj - Bai;
+        residuals.block<3, 1>(15, 0) = Bgj - Bgi;
+        return residuals;
+    }
+
     double dt;
     Eigen::Vector3d acc_0, gyr_0;
     Eigen::Vector3d acc_1, gyr_1;
@@ -416,9 +456,9 @@ public:
         Vector3d omg = _gyr_1 - linearized_bg;
         omg = omg * _dt / 2;
         Quaterniond dR(1, omg(0), omg(1), omg(2));
-        result_delta_q = (delta_q * dR);   
+        result_delta_q = (delta_q * dR);
         result_linearized_ba = linearized_ba;
-        result_linearized_bg = linearized_bg;         
+        result_linearized_bg = linearized_bg;
 
         if(update_jacobian)
         {
@@ -468,10 +508,10 @@ public:
             covariance = F * covariance * F.transpose() + V * noise * V.transpose();
         }
 
-    }     
+    }
 
 
-    void checkJacobian(double _dt, const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0, 
+    void checkJacobian(double _dt, const Eigen::Vector3d &_acc_0, const Eigen::Vector3d &_gyr_0,
                                    const Eigen::Vector3d &_acc_1, const Eigen::Vector3d &_gyr_1,
                             const Eigen::Vector3d &delta_p, const Eigen::Quaterniond &delta_q, const Eigen::Vector3d &delta_v,
                             const Eigen::Vector3d &linearized_ba, const Eigen::Vector3d &linearized_bg)
