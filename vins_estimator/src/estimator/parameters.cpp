@@ -1,8 +1,8 @@
 /*******************************************************
  * Copyright (C) 2019, Aerial Robotics Group, Hong Kong University of Science and Technology
- * 
+ *
  * This file is part of VINS.
- * 
+ *
  * Licensed under the GNU General Public License v3.0;
  * you may not use this file except in compliance with the License.
  *******************************************************/
@@ -110,7 +110,16 @@ void readParameters(std::string config_file)
         GYR_W = fsSettings["gyr_w"];
         G.z() = fsSettings["g_norm"];
     }
-
+    USE_WHEEL = fsSettings["wheel"];
+    if (USE_WHEEL)
+    {
+        fsSettings["encoder_topic"] >> WHEEL_TOPIC;
+        printf("WHEEL_TOPIC: %s\n", WHEEL_TOPIC.c_str());
+        ENC_RESOLUTION = fsSettings["encode_resolution"]; // 轮速计
+        LEFT_D = fsSettings["left_wheel_diameter"];       // 轮速计
+        RIGHT_D = fsSettings["right_wheel_diameter"];     // 轮速计
+        WHEELBASE = fsSettings["wheelbase"];              // 轮速计
+    }
     SOLVER_TIME = fsSettings["max_solver_time"];
     NUM_ITERATIONS = fsSettings["max_num_iterations"];
     MIN_PARALLAX = fsSettings["keyframe_parallax"];
@@ -140,12 +149,45 @@ void readParameters(std::string config_file)
         if (ESTIMATE_EXTRINSIC == 0)
             ROS_WARN(" fix extrinsic param ");
 
+        /*
         cv::Mat cv_T;
         fsSettings["body_T_cam0"] >> cv_T;
         Eigen::Matrix4d T;
         cv::cv2eigen(cv_T, T);
         RIC.push_back(T.block<3, 3>(0, 0));
         TIC.push_back(T.block<3, 1>(0, 3));
+        */
+
+        // read extrinsic parameters for kaist dataset
+        cv::Mat cv_R, cv_T;
+        fsSettings["extrinsicRotation_ic"] >> cv_R;
+        fsSettings["extrinsicTranslation_ic"] >> cv_T;
+        Eigen::Matrix3d eigen_R;
+        Eigen::Vector3d eigen_T;
+        cv::cv2eigen(cv_R, eigen_R);
+        cv::cv2eigen(cv_T, eigen_T);
+        Eigen::Quaterniond Q(eigen_R);
+        eigen_R = Q.normalized();
+        RIC.push_back(eigen_R);
+        TIC.push_back(eigen_T);
+        ROS_INFO_STREAM("Extrinsic_Ric : " << std::endl
+                                           << RIC[0]);
+        ROS_INFO_STREAM("Extrinsic_Tic : " << std::endl
+                                           << TIC[0].transpose());
+
+        // 读取Rio和Tio
+        fsSettings["extrinsicRotation_io"] >> cv_R;
+        fsSettings["extrinsicTranslation_io"] >> cv_T;
+        cv::cv2eigen(cv_R, eigen_R);
+        cv::cv2eigen(cv_T, eigen_T);
+        Eigen::Quaterniond Qio(eigen_R);
+        eigen_R = Qio.normalized();
+        RIO = eigen_R;
+        TIO = eigen_T;
+        ROS_INFO_STREAM("Extrinsic_Rio : " << std::endl
+                                           << RIO);
+        ROS_INFO_STREAM("Extrinsic_Tic : " << std::endl
+                                           << TIO.transpose());
     }
 
     NUM_OF_CAM = fsSettings["num_of_cam"];
@@ -171,7 +213,7 @@ void readParameters(std::string config_file)
         std::string cam1Calib;
         fsSettings["cam1_calib"] >> cam1Calib;
         std::string cam1Path = configPath + "/" + cam1Calib;
-        //printf("%s cam1 path\n", cam1Path.c_str() );
+        // printf("%s cam1 path\n", cam1Path.c_str() );
         CAM_NAMES.push_back(cam1Path);
 
         cv::Mat cv_T;
