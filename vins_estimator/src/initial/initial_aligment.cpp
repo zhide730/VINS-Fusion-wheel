@@ -1,8 +1,8 @@
 /*******************************************************
  * Copyright (C) 2019, Aerial Robotics Group, Hong Kong University of Science and Technology
- * 
+ *
  * This file is part of VINS.
- * 
+ *
  * Licensed under the GNU General Public License v3.0;
  * you may not use this file except in compliance with the License.
  *
@@ -28,7 +28,8 @@ void solveGyroscopeBias(map<double, ImageFrame> &all_image_frame, Vector3d *Bgs)
         VectorXd tmp_b(3);
         tmp_b.setZero();
         Eigen::Quaterniond q_ij(frame_i->second.R.transpose() * frame_j->second.R);
-        tmp_A = frame_j->second.pre_integration->jacobian.template block<3, 3>(O_R, O_BG);
+        // tmp_A = frame_j->second.pre_integration->jacobian.template block<3, 3>(O_R, O_BG);
+        tmp_A = frame_j->second.pre_integration->jacobian_enc.template block<3, 3>(3, 15);
         tmp_b = 2 * (frame_j->second.pre_integration->delta_q.inverse() * q_ij).vec();
         A += tmp_A.transpose() * tmp_A;
         b += tmp_A.transpose() * tmp_b;
@@ -164,7 +165,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
 {
     Vector3d g0 = g.normalized() * G.norm();
     Vector3d lx, ly;
-    //VectorXd x;
+    // VectorXd x;
     int all_frame_count = all_image_frame.size();
     // int n_state = all_frame_count * 3 + 2 + 1;
     int n_state = all_frame_count * 3 + 2;
@@ -229,8 +230,8 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
             //                           q_b0bk.inverse().toRotationMatrix() * dt * Matrix3d::Identity() * g0;
 
             Matrix<double, 6, 6> cov_inv = Matrix<double, 6, 6>::Zero();
-            //cov.block<6, 6>(0, 0) = IMU_cov[i + 1];
-            //MatrixXd cov_inv = cov.inverse();
+            // cov.block<6, 6>(0, 0) = IMU_cov[i + 1];
+            // MatrixXd cov_inv = cov.inverse();
             cov_inv.setIdentity();
 
             MatrixXd r_A = tmp_A.transpose() * cov_inv * tmp_A;
@@ -257,7 +258,7 @@ void RefineGravity(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vector
         // VectorXd dg = x.segment<2>(n_state - 3);
         VectorXd dg = x.segment<2>(n_state - 2);
         g0 = (g0 + lxly * dg).normalized() * G.norm();
-        //double s = x(n_state - 1);
+        // double s = x(n_state - 1);
     }
     g = g0;
 }
@@ -289,7 +290,7 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
 
         tmp_A.block<3, 3>(0, 0) = -dt * Matrix3d::Identity();
         tmp_A.block<3, 3>(0, 6) = frame_i->second.R.transpose() * dt * dt / 2 * Matrix3d::Identity();
-        tmp_A.block<3, 1>(0, 9) = frame_i->second.R.transpose() * (frame_j->second.T - frame_i->second.T) / 100.0;     
+        tmp_A.block<3, 1>(0, 9) = frame_i->second.R.transpose() * (frame_j->second.T - frame_i->second.T) / 100.0;
         tmp_b.block<3, 1>(0, 0) = frame_j->second.pre_integration->delta_p + frame_i->second.R.transpose() * frame_j->second.R * TIC[0] - TIC[0];
         //cout << "delta_p   " << frame_j->second.pre_integration->delta_p.transpose() << endl;
         tmp_A.block<3, 3>(3, 0) = -Matrix3d::Identity();
@@ -332,7 +333,7 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
     (x.tail<1>())(0) = s;
     ROS_DEBUG_STREAM(" refine     " << g.norm() << " " << g.transpose());
     if(s < 0.0 )
-        return false;   
+        return false;
     else
         return true;
 }
@@ -398,8 +399,8 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
         cout << "delta_v   " << frame_j->second.pre_integration->delta_v.transpose() << endl;
 
         Matrix<double, 6, 6> cov_inv = Matrix<double, 6, 6>::Zero();
-        //cov.block<6, 6>(0, 0) = IMU_cov[i + 1];
-        //MatrixXd cov_inv = cov.inverse();
+        // cov.block<6, 6>(0, 0) = IMU_cov[i + 1];
+        // MatrixXd cov_inv = cov.inverse();
         cov_inv.setIdentity();
 
         MatrixXd r_A = tmp_A.transpose() * cov_inv * tmp_A;
