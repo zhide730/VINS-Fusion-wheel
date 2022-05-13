@@ -75,12 +75,14 @@ g_norm: 9.81007     # gravity magnitude
 #unsynchronization parameters
 estimate_td: 0                      # online estimate time offset between camera and imu
 td: 0.0                             # initial value of time offset. unit: s. readed image clock + td = real image clock (IMU clock)
+estimate_td_wheel: 0
+td_wheel: 0.0  
 
 #loop closure parameters
 loop_closure: 1                    # start loop closure
 load_previous_pose_graph: 0        # load and reuse previous pose graph; load from 'pose_graph_save_path'
 fast_relocalization: 1             # useful in real-time and large project
-pose_graph_save_path: "/home/xiaoqiang/output/pose_graph/" # save and load path
+pose_graph_save_path: "/home/zzd/output/pose_graph/" # save and load path
 
 #rolling shutter parameters
 rolling_shutter: 0                  # 0: global shutter camera, 1: rolling shutter camera
@@ -97,7 +99,14 @@ encode_resolution: 4096         # resolution of encoder
 left_wheel_diameter: 0.623479   # [m]
 right_wheel_diameter: 0.622806  # [m]
 wheelbase: 1.52439             # [m] wheelbase, length between two wheels
-enc_n: 0.2       # encoder readings noise standard deviation.
+enc_n: 0.01       # encoder readings noise standard deviation.
+wheel_velocity_noise_sigma: 0.01
+wheel_gyro_noise_sigma: 0.05
+sx: 1.0
+sy: 1.0
+sw: 1.0
+estimate_wheel_extrinsic: 0
+estimate_wheel_intrinsic: 0
 
 #Rotation from encoder frame to imu frame, imu^R_enc
 extrinsicRotation_io: !!opencv-matrix

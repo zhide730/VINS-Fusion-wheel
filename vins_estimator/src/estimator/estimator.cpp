@@ -13,6 +13,15 @@
 Estimator::Estimator() : f_manager{Rs}
 {
     ROS_INFO("init begins");
+    for (int i = 0; i < WINDOW_SIZE + 1; ++i)
+    {
+        pre_integrations[i] = nullptr;
+        pre_integrations_wheel[i] = nullptr;
+    }
+    tmp_pre_integration = nullptr;
+    tmp_wheel_pre_integration = nullptr;
+    last_marginalization_info = nullptr;
+
     initThreadFlag = false;
     clearState();
 }
@@ -35,12 +44,17 @@ void Estimator::clearState()
         gyrBuf.pop();
     while (!featureBuf.empty())
         featureBuf.pop();
+    while (!wheelVelBuf.empty())
+        wheelVelBuf.pop();
+    while (!wheelGyrBuf.empty())
+        wheelGyrBuf.pop();
 
     prevTime = -1;
-    curTime = 0;
     prevTime_wheel = -1;
+    curTime = 0;
     curTime_wheel = 0;
     openExEstimation = 0;
+    openExWheelEstimation = 0;
     initP = Eigen::Vector3d(0, 0, 0);
     initR = Eigen::Matrix3d::Identity();
     inputImageCnt = 0;
@@ -56,12 +70,21 @@ void Estimator::clearState()
         dt_buf[i].clear();
         linear_acceleration_buf[i].clear();
         angular_velocity_buf[i].clear();
-
+        encoder_velocity_buf[i].clear();
         if (pre_integrations[i] != nullptr)
         {
             delete pre_integrations[i];
         }
         pre_integrations[i] = nullptr;
+
+        dt_buf_wheel[i].clear();
+        linear_velocity_buf_wheel[i].clear();
+        angular_velocity_buf_wheel[i].clear();
+        if (pre_integrations_wheel[i] != nullptr)
+        {
+            delete pre_integrations_wheel[i];
+        }
+        pre_integrations_wheel[i] = nullptr;
     }
 
     for (int i = 0; i < NUM_OF_CAM; i++)
@@ -105,11 +128,23 @@ void Estimator::setParameter()
              << ric[i] << endl
              << tic[i].transpose() << endl;
     }
+    tio = TIO;
+    rio = RIO;
+    cout << " exitrinsic wheel " << endl
+         << rio << endl
+         << tio.transpose() << endl;
+    sx = SX;
+    sy = SY;
+    sw = SW;
+    cout << " initrinsic wheel " << endl
+         << sx << " " << sy << " " << sw << endl;
+
     f_manager.setRic(ric);
     ProjectionTwoFrameOneCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionTwoFrameTwoCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionOneFrameTwoCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     td = TD;
+    td_wheel = TD_WHEEL;
     g = G;
     cout << "set g " << g.transpose() << endl;
     featureTracker.readIntrinsicParameter(CAM_NAMES);
@@ -216,10 +251,11 @@ void Estimator::inputIMU(double t, const Vector3d &linearAcceleration, const Vec
     }
 }
 
-void Estimator::inputWheel(double t, const Vector3d &linearVelocity)
+void Estimator::inputWheel(double t, const Vector3d &linearVelocity, const Vector3d &gyrVelocity)
 {
     mWheelBuf.lock();
     wheelVelBuf.push(make_pair(t, linearVelocity));
+    wheelGyrBuf.push(make_pair(t, gyrVelocity));
     mWheelBuf.unlock();
 }
 
@@ -268,7 +304,7 @@ bool Estimator::getIMUInterval(double t0, double t1, vector<pair<double, Eigen::
     return true;
 }
 
-bool Estimator::getWheelInterval(double t0, double t1, vector<pair<double, Eigen::Vector3d>> &velVector)
+bool Estimator::getWheelInterval(double t0, double t1, vector<pair<double, Eigen::Vector3d>> &velVector, vector<pair<double, Eigen::Vector3d>> &gyrVector)
 {
     if (wheelVelBuf.empty())
     {
@@ -289,6 +325,7 @@ bool Estimator::getWheelInterval(double t0, double t1, vector<pair<double, Eigen
             wheelVelBuf.pop();
         }
         velVector.push_back(wheelVelBuf.front());
+        gyrVector.push_back(wheelGyrBuf.front());
     }
     else
     {
@@ -322,7 +359,7 @@ void Estimator::processMeasurements()
         // printf("process measurments\n");
         pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>> feature;
         vector<pair<double, Eigen::Vector3d>> accVector, gyrVector;
-        vector<pair<double, Eigen::Vector3d>> velWheelVector;
+        vector<pair<double, Eigen::Vector3d>> velWheelVector, gyrWheelVector;
         vector<pair<double, Eigen::Vector3d>> encVector;
         if (!featureBuf.empty())
         {
@@ -359,7 +396,7 @@ void Estimator::processMeasurements()
             if (USE_IMU)
                 getIMUInterval(prevTime, curTime, accVector, gyrVector);
             if (USE_WHEEL)
-                getWheelInterval(prevTime, curTime, velWheelVector);
+                getWheelInterval(prevTime, curTime, velWheelVector, gyrWheelVector);
 
             // imu encoder 时间戳对齐
             for (auto acc : accVector)
@@ -431,6 +468,24 @@ void Estimator::processMeasurements()
                     processIMUEncoder(accVector[i].first, dt, accVector[i].second, gyrVector[i].second, encVector[i].second);
                 }
             }
+
+            if (USE_WHEEL)
+            {
+                for (size_t i = 0; i < velWheelVector.size(); i++)
+                {
+                    //获取两帧wheel数据之间的dt
+                    double dt;
+                    if (i == 0)
+                        dt = velWheelVector[i].first - prevTime_wheel;
+                    else if (i == velWheelVector.size() - 1)
+                        dt = curTime_wheel - velWheelVector[i - 1].first;
+                    else
+                        dt = velWheelVector[i].first - velWheelVector[i - 1].first;
+                    //预积分
+                    processWheel(velWheelVector[i].first, dt, velWheelVector[i].second, gyrWheelVector[i].second);
+                }
+            }
+
             mProcess.lock();
             processImage(feature.second, feature.first);
             prevTime = curTime;
@@ -565,6 +620,44 @@ void Estimator::processIMUEncoder(double t, double dt, const Vector3d &linear_ac
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity;
     enc_v_0 = encoder_velocity;
+}
+
+void Estimator::processWheel(double t, double dt, const Vector3d &linear_velocity, const Vector3d &angular_velocity)
+{
+    if (!first_wheel) //第一帧IMU
+    {
+        first_wheel = true;
+        vel_0_wheel = linear_velocity; //始终为中值积分里的第一个数据
+        gyr_0_wheel = angular_velocity;
+    }
+
+    if (!pre_integrations_wheel[frame_count])
+    {
+        pre_integrations_wheel[frame_count] = new WheelIntegrationBase{vel_0_wheel, gyr_0_wheel, sx, sy, sw, td_wheel};
+    }
+    if (frame_count != 0)
+    {
+        //预积分
+        pre_integrations_wheel[frame_count]->push_back(dt, linear_velocity, angular_velocity);
+        // if(solver_flag != NON_LINEAR)
+        tmp_wheel_pre_integration->push_back(dt, linear_velocity, angular_velocity);
+
+        dt_buf_wheel[frame_count].push_back(dt);
+        linear_velocity_buf_wheel[frame_count].push_back(linear_velocity);
+        angular_velocity_buf_wheel[frame_count].push_back(angular_velocity);
+
+        //        int j = frame_count;
+        //        //这个是IMU惯性解算, Ps[j], Rs[j], Vs[j]的初值在processImage里通过上一帧的状态量进行初始化
+        //        Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;
+        //        Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];
+        //        Rs[j] *= Utility::deltaQ(un_gyr * dt).toRotationMatrix();
+        //        Vector3d un_acc_1 = Rs[j] * (linear_velocity - Bas[j]) - g;
+        //        Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
+        //        Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;
+        //        Vs[j] += dt * un_acc;
+    }
+    vel_0_wheel = linear_velocity;
+    gyr_0_wheel = angular_velocity;
 }
 
 void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, const double header)
@@ -1015,11 +1108,25 @@ void Estimator::vector2double()
         para_Ex_Pose[i][6] = q.w();
     }
 
+    para_Ex_Pose_wheel[0][0] = tio.x();
+    para_Ex_Pose_wheel[0][1] = tio.y();
+    para_Ex_Pose_wheel[0][2] = tio.z();
+    Quaterniond q{rio};
+    para_Ex_Pose_wheel[0][3] = q.x();
+    para_Ex_Pose_wheel[0][4] = q.y();
+    para_Ex_Pose_wheel[0][5] = q.z();
+    para_Ex_Pose_wheel[0][6] = q.w();
+
+    para_Ix_sx_wheel[0][0] = sx;
+    para_Ix_sy_wheel[0][0] = sy;
+    para_Ix_sw_wheel[0][0] = sw;
+
     VectorXd dep = f_manager.getDepthVector();
     for (int i = 0; i < f_manager.getFeatureCount(); i++)
         para_Feature[i][0] = dep(i);
 
     para_Td[0][0] = td;
+    para_Td_wheel[0][0] = td_wheel;
 }
 
 void Estimator::double2vector()
@@ -1102,6 +1209,24 @@ void Estimator::double2vector()
                          .normalized()
                          .toRotationMatrix();
         }
+    }
+
+    if (USE_WHEEL)
+    {
+        tio = Vector3d(para_Ex_Pose_wheel[0][0],
+                       para_Ex_Pose_wheel[0][1],
+                       para_Ex_Pose_wheel[0][2]);
+        rio = Quaterniond(para_Ex_Pose_wheel[0][6],
+                          para_Ex_Pose_wheel[0][3],
+                          para_Ex_Pose_wheel[0][4],
+                          para_Ex_Pose_wheel[0][5])
+                  .normalized()
+                  .toRotationMatrix();
+        sx = para_Ix_sx_wheel[0][0];
+        sy = para_Ix_sy_wheel[0][0];
+        sw = para_Ix_sw_wheel[0][0];
+
+        td_wheel = para_Td_wheel[0][0];
     }
 
     VectorXd dep = f_manager.getDepthVector();
@@ -1198,10 +1323,45 @@ void Estimator::optimization()
             problem.SetParameterBlockConstant(para_Ex_Pose[i]);
         }
     }
+
+    if (USE_WHEEL)
+    {
+        ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
+        problem.AddParameterBlock(para_Ex_Pose_wheel[0], SIZE_POSE, local_parameterization);
+        if ((ESTIMATE_EXTRINSIC && frame_count == WINDOW_SIZE && Vs[0].norm() > 0.2) || openExEstimation)
+        {
+            // ROS_INFO("estimate extinsic param");
+            openExEstimation = 1;
+        }
+        else
+        {
+            // ROS_INFO("fix extinsic param");
+            problem.SetParameterBlockConstant(para_Ex_Pose[i]);
+        }
+        problem.AddParameterBlock(para_Ix_sx_wheel[0], 1);
+        problem.AddParameterBlock(para_Ix_sy_wheel[0], 1);
+        problem.AddParameterBlock(para_Ix_sw_wheel[0], 1);
+        if ((ESTIMATE_INTRINSIC_WHEEL && frame_count == WINDOW_SIZE && Vs[0].norm() > 0.2) || openIxEstimation)
+        {
+            // ROS_INFO("estimate intrinsic param");
+            openIxEstimation = 1;
+        }
+        else
+        {
+            // ROS_INFO("fix extinsic param");
+            problem.SetParameterBlockConstant(para_Ix_sx_wheel[0]);
+            problem.SetParameterBlockConstant(para_Ix_sy_wheel[0]);
+            problem.SetParameterBlockConstant(para_Ix_sw_wheel[0]);
+        }
+    }
+
     problem.AddParameterBlock(para_Td[0], 1);
+    problem.AddParameterBlock(para_Td_wheel[0], 1);
 
     if (!ESTIMATE_TD || Vs[0].norm() < 0.2)
         problem.SetParameterBlockConstant(para_Td[0]);
+    if (!ESTIMATE_TD_WHEEL || Vs[0].norm() < 0.2)
+        problem.SetParameterBlockConstant(para_Td_wheel[0]);
 
     if (last_marginalization_info && last_marginalization_info->valid)
     {
@@ -1232,6 +1392,29 @@ void Estimator::optimization()
                 continue;
             IMUEncoderFactor *imu_encoder_factor = new IMUEncoderFactor(pre_integrations[j]);
             problem.AddResidualBlock(imu_encoder_factor, NULL, para_Pose[i], para_SpeedBias[i], para_Pose[j], para_SpeedBias[j]);
+        }
+    }
+
+    if (USE_WHEEL)
+    {
+        for (int i = 0; i < frame_count; i++)
+        {
+            int j = i + 1;
+            if (pre_integrations_wheel[j]->sum_dt > 10.0) //两图像帧之间时间过长，不使用中间的预积分
+                continue;
+            // TODO 添加卡方检验
+            WheelFactor *wheel_factor = new WheelFactor(pre_integrations_wheel[j]);
+            problem.AddResidualBlock(wheel_factor, NULL, para_Pose[i], para_Pose[j], para_Ex_Pose_wheel[0], para_Ix_sx_wheel[0], para_Ix_sy_wheel[0], para_Ix_sw_wheel[0], para_Td_wheel[0]);
+
+            //            std::vector<const double *> parameters(7);
+            //            parameters[0] = para_Pose[i];
+            //            parameters[1] = para_Pose[j];
+            //            parameters[2] = para_Ex_Pose_wheel[0];
+            //            parameters[3] = para_Ix_sx_wheel[0];
+            //            parameters[4] = para_Ix_sy_wheel[0];
+            //            parameters[5] = para_Ix_sw_wheel[0];
+            //            parameters[6] = para_Td_wheel[0];
+            //            wheel_factor->check(const_cast<double **>(parameters.data()));
         }
     }
 
@@ -1345,7 +1528,7 @@ void Estimator::optimization()
         }
         */
         // 滑窗首帧与后一帧之间的IMU_ENCODER残差
-        if (USE_IMU && USE_WHEEL)
+        if (USE_IMU)
         {
             if (pre_integrations[1]->sum_dt < 10.0)
             {
@@ -1355,6 +1538,19 @@ void Estimator::optimization()
                 //                                                            vector<int>{0, 1});
                 IMUEncoderFactor *imu_encoder_factor = new IMUEncoderFactor(pre_integrations[1]);
                 ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(imu_encoder_factor, NULL, vector<double *>{para_Pose[0], para_SpeedBias[0], para_Pose[1], para_SpeedBias[1]}, vector<int>{0, 1});
+                marginalization_info->addResidualBlockInfo(residual_block_info);
+            }
+        }
+
+        // wheel 预积分部分，基于第0帧与第1帧之间的预积分残差，边缘化第0帧状态向量
+        if (USE_WHEEL)
+        {
+            if (pre_integrations_wheel[1]->sum_dt < 10.0)
+            {
+                WheelFactor *wheel_factor = new WheelFactor(pre_integrations_wheel[1]);
+                ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(wheel_factor, NULL,
+                                                                               vector<double *>{para_Pose[0], para_Pose[1], para_Ex_Pose_wheel[0], para_Ix_sx_wheel[0], para_Ix_sy_wheel[0], para_Ix_sw_wheel[0], para_Td_wheel[0]},
+                                                                               vector<int>{0}); //边缘化 para_Pose[0]
                 marginalization_info->addResidualBlockInfo(residual_block_info);
             }
         }
@@ -1432,7 +1628,12 @@ void Estimator::optimization()
         for (int i = 0; i < NUM_OF_CAM; i++)
             addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
 
+        addr_shift[reinterpret_cast<long>(para_Ex_Pose_wheel[0])] = para_Ex_Pose_wheel[0];
+        addr_shift[reinterpret_cast<long>(para_Ix_sx_wheel[0])] = para_Ix_sx_wheel[0];
+        addr_shift[reinterpret_cast<long>(para_Ix_sy_wheel[0])] = para_Ix_sy_wheel[0];
+        addr_shift[reinterpret_cast<long>(para_Ix_sw_wheel[0])] = para_Ix_sw_wheel[0];
         addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
+        addr_shift[reinterpret_cast<long>(para_Td_wheel[0])] = para_Td_wheel[0];
 
         vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
 
@@ -1497,8 +1698,13 @@ void Estimator::optimization()
             }
             for (int i = 0; i < NUM_OF_CAM; i++)
                 addr_shift[reinterpret_cast<long>(para_Ex_Pose[i])] = para_Ex_Pose[i];
+            addr_shift[reinterpret_cast<long>(para_Ex_Pose_wheel[0])] = para_Ex_Pose_wheel[0];
+            addr_shift[reinterpret_cast<long>(para_Ix_sx_wheel[0])] = para_Ix_sx_wheel[0];
+            addr_shift[reinterpret_cast<long>(para_Ix_sy_wheel[0])] = para_Ix_sy_wheel[0];
+            addr_shift[reinterpret_cast<long>(para_Ix_sw_wheel[0])] = para_Ix_sw_wheel[0];
 
             addr_shift[reinterpret_cast<long>(para_Td[0])] = para_Td[0];
+            addr_shift[reinterpret_cast<long>(para_Td_wheel[0])] = para_Td_wheel[0];
 
             vector<double *> parameter_blocks = marginalization_info->getParameterBlocks(addr_shift);
             if (last_marginalization_info)
@@ -1539,6 +1745,14 @@ void Estimator::slideWindow()
                     Bas[i].swap(Bas[i + 1]);
                     Bgs[i].swap(Bgs[i + 1]);
                 }
+                if (USE_WHEEL)
+                {
+                    std::swap(pre_integrations_wheel[i], pre_integrations_wheel[i + 1]);
+
+                    dt_buf_wheel[i].swap(dt_buf_wheel[i + 1]);
+                    linear_velocity_buf_wheel[i].swap(linear_velocity_buf_wheel[i + 1]);
+                    angular_velocity_buf_wheel[i].swap(angular_velocity_buf_wheel[i + 1]);
+                }
             }
             Headers[WINDOW_SIZE] = Headers[WINDOW_SIZE - 1];
             Ps[WINDOW_SIZE] = Ps[WINDOW_SIZE - 1];
@@ -1557,6 +1771,17 @@ void Estimator::slideWindow()
                 linear_acceleration_buf[WINDOW_SIZE].clear();
                 angular_velocity_buf[WINDOW_SIZE].clear();
                 encoder_velocity_buf[WINDOW_SIZE].clear();
+            }
+
+            if (USE_WHEEL)
+            {
+
+                delete pre_integrations_wheel[WINDOW_SIZE];
+                pre_integrations_wheel[WINDOW_SIZE] = new WheelIntegrationBase{vel_0_wheel, gyr_0_wheel, sx, sy, sw, td_wheel};
+
+                dt_buf_wheel[WINDOW_SIZE].clear();
+                linear_velocity_buf_wheel[WINDOW_SIZE].clear();
+                angular_velocity_buf_wheel[WINDOW_SIZE].clear();
             }
 
             if (true || solver_flag == INITIAL)
@@ -1608,6 +1833,30 @@ void Estimator::slideWindow()
                 angular_velocity_buf[WINDOW_SIZE].clear();
                 encoder_velocity_buf[WINDOW_SIZE].clear();
             }
+
+            if (USE_WHEEL) // WHEEL数据衔接，预积分的传播
+            {
+                for (unsigned int i = 0; i < dt_buf_wheel[frame_count].size(); i++)
+                {
+                    double tmp_dt = dt_buf_wheel[frame_count][i];
+                    Vector3d tmp_linear_velocity = linear_velocity_buf_wheel[frame_count][i];
+                    Vector3d tmp_angular_velocity = angular_velocity_buf_wheel[frame_count][i];
+
+                    pre_integrations_wheel[frame_count - 1]->push_back(tmp_dt, tmp_linear_velocity, tmp_angular_velocity); //预积分的传播
+
+                    dt_buf_wheel[frame_count - 1].push_back(tmp_dt);
+                    linear_velocity_buf_wheel[frame_count - 1].push_back(tmp_linear_velocity);
+                    angular_velocity_buf_wheel[frame_count - 1].push_back(tmp_angular_velocity);
+                }
+
+                delete pre_integrations_wheel[WINDOW_SIZE];
+                pre_integrations_wheel[WINDOW_SIZE] = new WheelIntegrationBase{vel_0_wheel, gyr_0_wheel, sx, sy, sw, td_wheel};
+
+                dt_buf_wheel[WINDOW_SIZE].clear();
+                linear_velocity_buf_wheel[WINDOW_SIZE].clear();
+                angular_velocity_buf_wheel[WINDOW_SIZE].clear();
+            }
+
             slideWindowNew();
         }
     }

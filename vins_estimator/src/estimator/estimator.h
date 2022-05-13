@@ -30,6 +30,7 @@
 #include "../initial/initial_ex_rotation.h"
 #include "../factor/imu_factor.h"
 #include "../factor/imu_encoder_factor.h"
+#include "../factor/wheel_factor.h"
 #include "../factor/pose_local_parameterization.h"
 #include "../factor/marginalization_factor.h"
 #include "../factor/projectionTwoFrameOneCamFactor.h"
@@ -47,11 +48,12 @@ public:
     // interface
     void initFirstPose(Eigen::Vector3d p, Eigen::Matrix3d r);
     void inputIMU(double t, const Vector3d &linearAcceleration, const Vector3d &angularVelocity);
-    void inputWheel(double t, const Vector3d &linearVelocity);
+    void inputWheel(double t, const Vector3d &linearVelocity, const Vector3d &gyrVelocity);
     void inputFeature(double t, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &featureFrame);
     void inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1 = cv::Mat());
     void processIMU(double t, double dt, const Vector3d &linear_acceleration, const Vector3d &angular_velocity);
     void processIMUEncoder(double t, double dt, const Vector3d &linear_acceleration, const Vector3d &angular_velocity, const Vector3d &encoder_velocity); // encoder
+    void processWheel(double t, double dt, const Vector3d &linear_velocity, const Vector3d &angular_velocity);
     void processImage(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, const double header);
     void processMeasurements();
     void changeSensorType(int use_imu, int use_stereo);
@@ -70,7 +72,7 @@ public:
     bool failureDetection();
     bool getIMUInterval(double t0, double t1, vector<pair<double, Eigen::Vector3d>> &accVector,
                         vector<pair<double, Eigen::Vector3d>> &gyrVector);
-    bool getWheelInterval(double t0, double t1, vector<pair<double, Eigen::Vector3d>> &velVector);
+    bool getWheelInterval(double t0, double t1, vector<pair<double, Eigen::Vector3d>> &velVector, vector<pair<double, Eigen::Vector3d>> &gyrVector);
     void getPoseInWorldFrame(Eigen::Matrix4d &T);
     void getPoseInWorldFrame(int index, Eigen::Matrix4d &T);
     void predictPtsInNextFrame();
@@ -103,12 +105,14 @@ public:
     queue<pair<double, Eigen::Vector3d>> accBuf;
     queue<pair<double, Eigen::Vector3d>> gyrBuf;
     queue<pair<double, Eigen::Vector3d>> wheelVelBuf;
+    queue<pair<double, Eigen::Vector3d>> wheelGyrBuf;
 
     queue<pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>>> featureBuf;
     double prevTime, curTime;
     double prevTime_wheel, curTime_wheel;
     bool openExEstimation;
-
+    bool openExWheelEstimation;
+    bool openIxEstimation;
     std::thread trackThread;
     std::thread processThread;
 
@@ -120,6 +124,9 @@ public:
 
     Matrix3d ric[2];
     Vector3d tic[2];
+    Matrix3d rio;
+    Vector3d tio;
+    double sx = 1, sy = 1, sw = 1;
 
     Vector3d Ps[(WINDOW_SIZE + 1)];
     Vector3d Vs[(WINDOW_SIZE + 1)];
@@ -137,13 +144,19 @@ public:
     double Headers[(WINDOW_SIZE + 1)];
 
     IntegrationBase *pre_integrations[(WINDOW_SIZE + 1)];
-    Vector3d acc_0, gyr_0;
-    Vector3d enc_v_0; // encoder
+    Vector3d acc_0, gyr_0, enc_v_0; // encoder
+
+    WheelIntegrationBase *pre_integrations_wheel[(WINDOW_SIZE + 1)];
+    Vector3d vel_0_wheel, gyr_0_wheel;
 
     vector<double> dt_buf[(WINDOW_SIZE + 1)];
     vector<Vector3d> linear_acceleration_buf[(WINDOW_SIZE + 1)];
     vector<Vector3d> angular_velocity_buf[(WINDOW_SIZE + 1)];
     vector<Vector3d> encoder_velocity_buf[(WINDOW_SIZE + 1)];
+
+    vector<double> dt_buf_wheel[(WINDOW_SIZE + 1)];
+    vector<Vector3d> linear_velocity_buf_wheel[(WINDOW_SIZE + 1)];
+    vector<Vector3d> angular_velocity_buf_wheel[(WINDOW_SIZE + 1)];
 
     int frame_count;
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
@@ -154,6 +167,7 @@ public:
     InitialEXRotation initial_ex_rotation;
 
     bool first_imu;
+    bool first_wheel;
     bool is_valid, is_key;
     bool failure_occur;
 
@@ -170,6 +184,12 @@ public:
     double para_Td[1][1];
     double para_Tr[1][1];
 
+    double para_Ex_Pose_wheel[1][SIZE_POSE];
+    double para_Ix_sx_wheel[1][1];
+    double para_Ix_sy_wheel[1][1];
+    double para_Ix_sw_wheel[1][1];
+    double para_Td_wheel[1][1];
+
     int loop_window_index;
 
     MarginalizationInfo *last_marginalization_info;
@@ -181,9 +201,16 @@ public:
     Eigen::Vector3d initP;
     Eigen::Matrix3d initR;
 
+    // imu
     double latest_time;
     Eigen::Vector3d latest_P, latest_V, latest_Ba, latest_Bg, latest_acc_0, latest_gyr_0;
     Eigen::Quaterniond latest_Q;
+
+    // Wheel
+    double latest_time_wheel;
+    Eigen::Vector3d latest_P_wheel, latest_V_wheel, latest_vel_wheel_0, latest_gyr_wheel_0;
+    double latest_sx, latest_sy, latest_sw;
+    Eigen::Quaterniond latest_Q_wheel;
 
     bool initFirstPoseFlag;
     bool initThreadFlag;

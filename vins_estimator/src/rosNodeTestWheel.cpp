@@ -1,8 +1,8 @@
 /*******************************************************
  * Copyright (C) 2019, Aerial Robotics Group, Hong Kong University of Science and Technology
- * 
+ *
  * This file is part of VINS.
- * 
+ *
  * Licensed under the GNU General Public License v3.0;
  * you may not use this file except in compliance with the License.
  *
@@ -101,7 +101,7 @@ void sync_process()
                     img0_buf.pop();
                     image1 = getImageFromMsg(img1_buf.front());
                     img1_buf.pop();
-                    //printf("find img0 and img1\n");
+                    // printf("find img0 and img1\n");
                 }
             }
             m_buf.unlock();
@@ -158,9 +158,11 @@ void wheel_callback(const custom_msgs::EncoderConstPtr &encoder_msg)
     double enc_vel_left = (double)(current_encoder_msg->left_encoder - last_encoder_msg->left_encoder) / ENC_RESOLUTION * M_PI * LEFT_D / dt;
     double enc_vel_right = (double)(current_encoder_msg->right_encoder - last_encoder_msg->right_encoder) / ENC_RESOLUTION * M_PI * RIGHT_D / dt;
     double enc_v = 0.5 * (enc_vel_left + enc_vel_right);
+    double enc_omega = (enc_vel_right - enc_vel_left) / WHEELBASE;
     Eigen::Vector3d enc_vel(enc_v, 0, 0);
+    Eigen::Vector3d enc_gyr(0, 0, enc_omega);
     double timestamp = 0.5 * (last_encoder_msg->header.stamp.toSec() + current_encoder_msg->header.stamp.toSec());
-    estimator.inputWheel(timestamp, enc_vel);
+    estimator.inputWheel(timestamp, enc_vel, enc_gyr);
     last_encoder_msg = current_encoder_msg;
     return;
 }
@@ -185,7 +187,7 @@ void feature_callback(const sensor_msgs::PointCloudConstPtr &feature_msg)
             double gy = feature_msg->channels[7].values[i];
             double gz = feature_msg->channels[8].values[i];
             pts_gt[feature_id] = Eigen::Vector3d(gx, gy, gz);
-            //printf("receive pts gt %d %f %f %f\n", feature_id, gx, gy, gz);
+            // printf("receive pts gt %d %f %f %f\n", feature_id, gx, gy, gz);
         }
         ROS_ASSERT(z == 1);
         Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
@@ -212,12 +214,12 @@ void imu_switch_callback(const std_msgs::BoolConstPtr &switch_msg)
 {
     if (switch_msg->data == true)
     {
-        //ROS_WARN("use IMU!");
+        // ROS_WARN("use IMU!");
         estimator.changeSensorType(1, STEREO);
     }
     else
     {
-        //ROS_WARN("disable IMU!");
+        // ROS_WARN("disable IMU!");
         estimator.changeSensorType(0, STEREO);
     }
     return;
@@ -227,12 +229,12 @@ void cam_switch_callback(const std_msgs::BoolConstPtr &switch_msg)
 {
     if (switch_msg->data == true)
     {
-        //ROS_WARN("use stereo!");
+        // ROS_WARN("use stereo!");
         estimator.changeSensorType(USE_IMU, 1);
     }
     else
     {
-        //ROS_WARN("use mono camera (left)!");
+        // ROS_WARN("use mono camera (left)!");
         estimator.changeSensorType(USE_IMU, 0);
     }
     return;

@@ -15,6 +15,12 @@ double ACC_N, ACC_W;
 double GYR_N, GYR_W;
 double ENC_N; // 轮速计噪声方差
 
+double VEL_N_wheel;
+double GYR_N_wheel;
+double SX = 1.0;
+double SY = 1.0;
+double SW = 1.0;
+
 std::vector<Eigen::Matrix3d> RIC;
 std::vector<Eigen::Vector3d> TIC;
 Eigen::Matrix3d RIO; // 轮速计到IMU外参R
@@ -27,7 +33,10 @@ double BIAS_GYR_THRESHOLD;
 double SOLVER_TIME;
 int NUM_ITERATIONS;
 int ESTIMATE_EXTRINSIC;
+int ESTIMATE_EXTRINSIC_WHEEL;
+int ESTIMATE_INTRINSIC_WHEEL;
 int ESTIMATE_TD;
+int ESTIMATE_TD_WHEEL;
 int ROLLING_SHUTTER;
 std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
@@ -36,6 +45,7 @@ std::string IMU_TOPIC;
 std::string WHEEL_TOPIC;
 int ROW, COL;
 double TD;
+double TD_WHEEL;
 int NUM_OF_CAM;
 int STEREO;
 int USE_IMU;
@@ -119,6 +129,14 @@ void readParameters(std::string config_file)
         LEFT_D = fsSettings["left_wheel_diameter"];       // 轮速计
         RIGHT_D = fsSettings["right_wheel_diameter"];     // 轮速计
         WHEELBASE = fsSettings["wheelbase"];              // 轮速计
+        ENC_N = fsSettings["enc_n"];                      // 轮速计噪声方差
+        VEL_N_wheel = fsSettings["wheel_velocity_noise_sigma"];
+        GYR_N_wheel = fsSettings["wheel_gyro_noise_sigma"];
+        SX = static_cast<double>(fsSettings["sx"]);
+        SY = static_cast<double>(fsSettings["sy"]);
+        SW = static_cast<double>(fsSettings["sw"]);
+        ESTIMATE_EXTRINSIC_WHEEL = fsSettings["estimate_wheel_extrinsic"];
+        ESTIMATE_INTRINSIC_WHEEL = fsSettings["estimate_wheel_intrinsic"];
     }
     SOLVER_TIME = fsSettings["max_solver_time"];
     NUM_ITERATIONS = fsSettings["max_num_iterations"];
@@ -228,6 +246,8 @@ void readParameters(std::string config_file)
     BIAS_ACC_THRESHOLD = 0.1;
     BIAS_GYR_THRESHOLD = 0.1;
 
+    TD_WHEEL = fsSettings["td"];
+    ESTIMATE_TD_WHEEL = fsSettings["estimate_td_wheel"];
     TD = fsSettings["td"];
     ESTIMATE_TD = fsSettings["estimate_td"];
     if (ESTIMATE_TD)

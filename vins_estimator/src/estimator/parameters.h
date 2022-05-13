@@ -28,10 +28,18 @@ const int NUM_OF_F = 1000;
 extern double INIT_DEPTH;
 extern double MIN_PARALLAX;
 extern int ESTIMATE_EXTRINSIC;
+extern int ESTIMATE_EXTRINSIC_WHEEL;
+extern int ESTIMATE_INTRINSIC_WHEEL;
 
 extern double ACC_N, ACC_W;
 extern double GYR_N, GYR_W;
 extern double ENC_N; // 轮速计噪声方差
+
+extern double VEL_N_wheel;
+extern double GYR_N_wheel;
+extern double SX;
+extern double SY;
+extern double SW;
 
 extern std::vector<Eigen::Matrix3d> RIC;
 extern std::vector<Eigen::Vector3d> TIC;
@@ -49,7 +57,9 @@ extern std::string OUTPUT_FOLDER;
 extern std::string IMU_TOPIC;
 extern std::string WHEEL_TOPIC;
 extern double TD;
+extern double TD_WHEEL;
 extern int ESTIMATE_TD;
+extern int ESTIMATE_TD_WHEEL;
 extern int ROLLING_SHUTTER;
 extern int ROW, COL;
 extern int NUM_OF_CAM;
