@@ -86,6 +86,7 @@ public:
         //        sqrt_info.setIdentity();
         //        std::cout<<"sqrt_info :\n"<<sqrt_info<<std::endl;
         residual = sqrt_info * residual;
+        //std::cout << "sqrt_info * residual: "<< residual.transpose() << std::endl;
 
         if (jacobians)
         {

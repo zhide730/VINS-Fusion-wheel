@@ -388,15 +388,15 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
         // tmp_A.block<3, 3>(0, 6) = 0.5 * q_b0bk.inverse().toRotationMatrix() * dt * dt * Matrix3d::Identity();
         tmp_b.block<3, 1>(0, 0) = frame_j->second.pre_integration->delta_p - frame_j->second.pre_integration->delta_eta +
                                   frame_j->second.pre_integration->delta_q.toRotationMatrix() * TIO - TIO;
-        cout << "delta_eta   " << frame_j->second.pre_integration->delta_eta.transpose() << endl;
-        cout << "delta_p   " << frame_j->second.pre_integration->delta_p.transpose() << endl;
-        cout << "delta_q   " << frame_j->second.pre_integration->delta_q.toRotationMatrix() << endl;
+        //cout << "delta_eta   " << frame_j->second.pre_integration->delta_eta.transpose() << endl;
+        //cout << "delta_p   " << frame_j->second.pre_integration->delta_p.transpose() << endl;
+        //cout << "delta_q   " << frame_j->second.pre_integration->delta_q.toRotationMatrix() << endl;
         tmp_A.block<3, 3>(3, 0) = -Matrix3d::Identity();
         tmp_A.block<3, 3>(3, 3) = frame_i->second.pre_integration->delta_q.toRotationMatrix();
         tmp_A.block<3, 3>(3, 6) = frame_i->second.R.transpose() * RIC[0].transpose() * dt * Matrix3d::Identity();
         // tmp_A.block<3, 3>(3, 6) = q_b0bk.inverse().toRotationMatrix() * dt * Matrix3d::Identity();
         tmp_b.block<3, 1>(3, 0) = frame_j->second.pre_integration->delta_v;
-        cout << "delta_v   " << frame_j->second.pre_integration->delta_v.transpose() << endl;
+        //cout << "delta_v   " << frame_j->second.pre_integration->delta_v.transpose() << endl;
 
         Matrix<double, 6, 6> cov_inv = Matrix<double, 6, 6>::Zero();
         // cov.block<6, 6>(0, 0) = IMU_cov[i + 1];
@@ -429,7 +429,7 @@ bool LinearAlignment(map<double, ImageFrame> &all_image_frame, Vector3d &g, Vect
     // ROS_DEBUG("estimated scale: %f", s);
     // g = x.segment<3>(n_state - 4);
     g = tmp_x.segment<3>(n_state - 3);
-    ROS_INFO_STREAM(" result g     " << g.norm() << " " << g.transpose());
+    ROS_INFO_STREAM(" result g     " << g.norm() << " " << (RIC[0].transpose() * g).transpose());
     // if(fabs(g.norm() - G.norm()) > 1.0 || s < 0)
     // {
     //     return false;

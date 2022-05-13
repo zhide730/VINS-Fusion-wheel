@@ -65,7 +65,7 @@ public:
         Eigen::Matrix<double, 18, 18> sqrt_info = Eigen::LLT<Eigen::Matrix<double, 18, 18>>(pre_integration->covariance_enc.inverse()).matrixL().transpose();
         // sqrt_info.setIdentity();
         residual = sqrt_info * residual;
-
+        //std::cout << "sqrt_info * residual: "<< residual.transpose() << std::endl;
         if (jacobians)
         {
             double sum_dt = pre_integration->sum_dt;

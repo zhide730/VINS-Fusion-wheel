@@ -25,6 +25,7 @@ find_package(OpenCV REQUIRED)
 
 find_package(Ceres REQUIRED)
 find_package(Sophus REQUIRED)
+find_package(fmt)
 
 include_directories(${catkin_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS})
 
@@ -54,18 +55,23 @@ add_library(vins_lib
     src/initial/initial_sfm.cpp
     src/initial/initial_ex_rotation.cpp
     src/featureTracker/feature_tracker.cpp)
-target_link_libraries(vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
-
+target_link_libraries(vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES} fmt::fmt)
 
 add_executable(vins_node src/rosNodeTest.cpp)
-target_link_libraries(vins_node vins_lib) 
+target_link_libraries(vins_node vins_lib)
 
 add_executable(viwo_node src/rosNodeTestWheel.cpp)
 target_link_libraries(viwo_node vins_lib)
 
 add_executable(kitti_odom_test src/KITTIOdomTest.cpp)
-target_link_libraries(kitti_odom_test vins_lib) 
+target_link_libraries(kitti_odom_test vins_lib)
 
 add_executable(kitti_gps_test src/KITTIGPSTest.cpp)
-target_link_libraries(kitti_gps_test vins_lib) 
+target_link_libraries(kitti_gps_test vins_lib)
 
+add_executable(kaist_pub src/data_pub/kaist_pub.cpp)
+target_link_libraries(kaist_pub
+    ${catkin_LIBRARIES}
+    ${OpenCV_LIBS}
+    pthread
+    )

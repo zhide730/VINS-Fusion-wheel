@@ -318,11 +318,14 @@ bool Estimator::getWheelInterval(double t0, double t1, vector<pair<double, Eigen
         while (wheelVelBuf.front().first <= t0)
         {
             wheelVelBuf.pop();
+            wheelGyrBuf.pop();
         }
         while (wheelVelBuf.front().first < t1)
         {
             velVector.push_back(wheelVelBuf.front());
+            gyrVector.push_back(wheelGyrBuf.front());
             wheelVelBuf.pop();
+            wheelGyrBuf.pop();
         }
         velVector.push_back(wheelVelBuf.front());
         gyrVector.push_back(wheelGyrBuf.front());
@@ -476,9 +479,9 @@ void Estimator::processMeasurements()
                     //获取两帧wheel数据之间的dt
                     double dt;
                     if (i == 0)
-                        dt = velWheelVector[i].first - prevTime_wheel;
+                        dt = velWheelVector[i].first - prevTime;
                     else if (i == velWheelVector.size() - 1)
-                        dt = curTime_wheel - velWheelVector[i - 1].first;
+                        dt = curTime - velWheelVector[i - 1].first;
                     else
                         dt = velWheelVector[i].first - velWheelVector[i - 1].first;
                     //预积分
@@ -489,6 +492,7 @@ void Estimator::processMeasurements()
             mProcess.lock();
             processImage(feature.second, feature.first);
             prevTime = curTime;
+            //prevTime_wheel = curTime;
 
             printStatistics(*this, 0);
 
@@ -1328,10 +1332,10 @@ void Estimator::optimization()
     {
         ceres::LocalParameterization *local_parameterization = new PoseLocalParameterization();
         problem.AddParameterBlock(para_Ex_Pose_wheel[0], SIZE_POSE, local_parameterization);
-        if ((ESTIMATE_EXTRINSIC && frame_count == WINDOW_SIZE && Vs[0].norm() > 0.2) || openExEstimation)
+        if ((ESTIMATE_EXTRINSIC && frame_count == WINDOW_SIZE && Vs[0].norm() > 0.2) || openExWheelEstimation)
         {
             // ROS_INFO("estimate extinsic param");
-            openExEstimation = 1;
+            openExWheelEstimation = 1;
         }
         else
         {
@@ -1341,18 +1345,18 @@ void Estimator::optimization()
         problem.AddParameterBlock(para_Ix_sx_wheel[0], 1);
         problem.AddParameterBlock(para_Ix_sy_wheel[0], 1);
         problem.AddParameterBlock(para_Ix_sw_wheel[0], 1);
-        if ((ESTIMATE_INTRINSIC_WHEEL && frame_count == WINDOW_SIZE && Vs[0].norm() > 0.2) || openIxEstimation)
-        {
-            // ROS_INFO("estimate intrinsic param");
-            openIxEstimation = 1;
-        }
-        else
-        {
+//        if ((ESTIMATE_INTRINSIC_WHEEL && frame_count == WINDOW_SIZE && Vs[0].norm() > 0.2) || openIxEstimation)
+//        {
+//            // ROS_INFO("estimate intrinsic param");
+//            openIxEstimation = 1;
+//        }
+//      else
+//    {
             // ROS_INFO("fix extinsic param");
             problem.SetParameterBlockConstant(para_Ix_sx_wheel[0]);
             problem.SetParameterBlockConstant(para_Ix_sy_wheel[0]);
             problem.SetParameterBlockConstant(para_Ix_sw_wheel[0]);
-        }
+//        }
     }
 
     problem.AddParameterBlock(para_Td[0], 1);
@@ -1360,7 +1364,7 @@ void Estimator::optimization()
 
     if (!ESTIMATE_TD || Vs[0].norm() < 0.2)
         problem.SetParameterBlockConstant(para_Td[0]);
-    if (!ESTIMATE_TD_WHEEL || Vs[0].norm() < 0.2)
+//    if (!ESTIMATE_TD_WHEEL || Vs[0].norm() < 0.2)
         problem.SetParameterBlockConstant(para_Td_wheel[0]);
 
     if (last_marginalization_info && last_marginalization_info->valid)
