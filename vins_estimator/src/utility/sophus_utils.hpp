@@ -230,7 +230,8 @@ namespace Sophus
             // Technically, log(exp(phi)exp(epsilon)) is not continuous / differentiable
             // at phi=pi, but we still aim to return a reasonable value for all valid
             // inputs.
-            BASALT_ASSERT(phi_norm <= M_PI + Sophus::Constants<Scalar>::epsilon());
+            // BASALT_ASSERT(phi_norm <= M_PI + Sophus::Constants<Scalar>::epsilon());
+            BOOST_ASSERT(phi_norm <= M_PI + Sophus::Constants<Scalar>::epsilon());
 
             if (phi_norm < M_PI - Sophus::Constants<Scalar>::epsilonSqrt())
             {

@@ -19,7 +19,7 @@ Estimator::Estimator() : f_manager{Rs}
         pre_integrations_wheel[i] = nullptr;
     }
     tmp_pre_integration = nullptr;
-    tmp_wheel_pre_integration = nullptr;
+    // tmp_wheel_pre_integration = nullptr;
     last_marginalization_info = nullptr;
 
     initThreadFlag = false;
@@ -640,7 +640,7 @@ void Estimator::processWheel(double t, double dt, const Vector3d &linear_velocit
         //预积分
         pre_integrations_wheel[frame_count]->push_back(dt, linear_velocity, angular_velocity);
         // if(solver_flag != NON_LINEAR)
-        tmp_wheel_pre_integration->push_back(dt, linear_velocity, angular_velocity);
+        // tmp_wheel_pre_integration->push_back(dt, linear_velocity, angular_velocity);
 
         dt_buf_wheel[frame_count].push_back(dt);
         linear_velocity_buf_wheel[frame_count].push_back(linear_velocity);
@@ -1336,7 +1336,7 @@ void Estimator::optimization()
         else
         {
             // ROS_INFO("fix extinsic param");
-            problem.SetParameterBlockConstant(para_Ex_Pose[i]);
+            problem.SetParameterBlockConstant(para_Ex_Pose_wheel[0]);
         }
         problem.AddParameterBlock(para_Ix_sx_wheel[0], 1);
         problem.AddParameterBlock(para_Ix_sy_wheel[0], 1);
